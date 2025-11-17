@@ -71,10 +71,6 @@ This script does the following:
 - The script assumes filenames follow the `Part X.mp3` naming convention.
 - The message `Lame tag CRC check failed` is a **harmless warning** and can be safely ignored. It is now shown in the status window when using the GUI.
 
-### Other Tools
-
-A couple of utility scripts are included as well:
-
 #### `buildChapters.py`
 
 `buildChapters.py` can be used to help add chapter metadata to a *compiled* m4b file.
