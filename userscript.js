@@ -129,6 +129,7 @@
         downloadElem.setAttribute("tabindex", "-1"); // Don't mess with tab key
         document.body.appendChild(downloadElem);
 
+		initFFmpeg().catch(console.error);
 
     }
     function getUrls(){
@@ -292,16 +293,7 @@
     let downloadState = -1;
     let ffmpeg = null;
     async function createAndDownloadMp3(urls){
-        if (!window.createFFmpeg){
-            downloadElem.innerHTML += "Downloading FFmpeg.wasm (~50mb) <br>";
-            await addFFmpegJs();
-            downloadElem.innerHTML += "Completed FFmpeg.wasm download <br>";
-        }
-        if (!ffmpeg){
-            downloadElem.innerHTML += "Initializing FFmpeg.wasm <br>";
-            ffmpeg = await window.createFFmpeg();
-            downloadElem.innerHTML += "FFmpeg.wasm initalized <br>";
-        }
+		await initFFmpeg();
         let metadata = getMetadata();
         downloadElem.innerHTML += "Downloading mp3 files <br>";
         await ffmpeg.writeFile("chapters.txt", generateTOCFFmpeg(metadata));
@@ -397,6 +389,33 @@
         setTimeout(() => URL.revokeObjectURL(blob_url), 100);
 
     }
+
+	let ffmpegInitPromise = null;
+
+	async function initFFmpeg() {
+		console.log("initFFmpeg");
+		if (ffmpegInitPromise) return ffmpegInitPromise;
+		ffmpegInitPromise = (async () => {
+			if (!window.createFFmpeg) {
+				downloadElem.innerHTML += "Downloading FFmpeg.wasm (~50MB)<br>";
+				console.log("Downloading FFmpeg.wasm (~50MB)");
+				await addFFmpegJs();
+				downloadElem.innerHTML += "Completed FFmpeg.wasm download<br>";
+				console.log("Completed FFmpeg.wasm download");
+			}
+
+			// Initialize FFmpeg if not already done
+			if (!ffmpeg) {
+				downloadElem.innerHTML += "Initializing FFmpeg.wasm<br>";
+				console.log("Initializing FFmpeg.wasm");
+				ffmpeg = await window.createFFmpeg({ log: true });
+				downloadElem.innerHTML += "FFmpeg.wasm initialized<br>";
+				console.log("FFmpeg.wasm initialized");
+			}
+		})();
+		return ffmpegInitPromise;
+	}
+    
     function exportMP3(){
         if (downloadState != -1)
             return;
