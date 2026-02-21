@@ -226,22 +226,37 @@
     }
 
     async function createMetadata(){
-        let metadata = getMetadata();
-        const response = await fetch(metadata.coverUrl);
-        const blob = await response.blob();
-        const csplit = metadata.coverUrl.split(".");
-        return [
-            {
-                name: "metadata/cover." + csplit[csplit.length-1],
-                input: blob
-            },
-            {
+        let createdMetadata = [];
+        let coverUrl = false;
+        try {
+            let metadata = getMetadata();
+            coverUrl = metadata.coverUrl;
+            createdMetadata.push({
                 name: "metadata/metadata.json",
                 input: JSON.stringify(metadata, null, 2)
+            });
+        }
+        catch(error) {
+            console.error("Error fetching metadata", error.message);
+        }
+        if(coverUrl) {
+            try {
+                const response = await fetch(coverUrl);
+                const blob = await response.blob();
+                const csplit = coverUrl.split(".");
+                createdMetadata.push({
+                    name: "metadata/cover." + csplit[csplit.length-1],
+                    input: blob
+                });
             }
-        ];
+            catch(error) {
+                console.error("Error fetching cover", error.message);
+            }
+        }
+        return createdMetadata;
     }
-    function generateTOCFFmpeg(metadata){
+
+	function generateTOCFFmpeg(metadata){
         if (!metadata.chapters) return null;
         let lastTitle = null;
 
