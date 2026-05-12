@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          LibreGRAB
 // @namespace     http://tampermonkey.net/
-// @version       2026-01-09
+// @version       2026-04-15
 // @description   Download all the booty!
 // @author        PsychedelicPalimpsest
 // @license       MIT
@@ -12,11 +12,25 @@
 // @match         *://*.read.overdrive.com/?*
 // @run-at        document-start
 // @icon          https://www.google.com/s2/favicons?sz=64&domain=libbyapp.com
-// @require       https://unpkg.com/client-zip@2.5.0/worker.js
 // @grant         none
+// @downloadURL https://update.greasyfork.org/scripts/498782/LibreGRAB.user.js
+// @updateURL https://update.greasyfork.org/scripts/498782/LibreGRAB.meta.js
 // ==/UserScript==
 
-(()=>{
+// Chrome (Tampermonkey/MV3) runs userscripts in an isolated JS world, meaning
+// overrides to JSON.parse and Function.prototype.bind never reach the page's
+// own execution context. The fix is to inject the main script body into the
+// real page world. client-zip is fetched here (where CSP does not apply to the
+// extension context) and injected into the page once it is ready.
+
+(function () {
+    const clientZipReadyCode = `
+window.__libregrabClientZipReady = new Promise((resolve, reject) => {
+    window.__libregrabResolveClientZip = resolve;
+    window.__libregrabRejectClientZip = reject;
+});
+`;
+    const mainCode = `(()=>{
 
     // Since the ffmpeg.js file is 50mb, it slows the page down too much
     // to be in a "require" attribute, so we load it in async
@@ -37,7 +51,12 @@
     }
 
     let downloadElem;
-    const CSS = `
+    async function getDownloadZip() {
+        if (window.downloadZip) return window.downloadZip;
+        if (window.__libregrabClientZipReady) return window.__libregrabClientZipReady;
+        throw new Error("client-zip did not load");
+    }
+    const CSS = \`
     .pNav{
         background-color: red;
         width: 100%;
@@ -70,7 +89,7 @@
     }
     .pChapLabel{
         font-size: 2em;
-    }`;
+    }\`;
     /* =========================================
               BEGIN AUDIOBOOK SECTION!
        =========================================
@@ -93,15 +112,15 @@
 
 
 
-    const audioBookNav = `
+    const audioBookNav = \`
         <a class="pLink" id="chap"> <h1> View chapters </h1> </a>
         <a class="pLink" id="down"> <h1> Export as MP3 </h1> </a>
         <a class="pLink" id="exp"> <h1> Export audiobook </h1> </a>
-    `;
-    const chaptersMenu = `
+    \`;
+    const chaptersMenu = \`
         <h2>This book contains {CHAPTERS} chapters.</h2>
         <button class="shibui-button" style="background-color: white" id="dumpAll"> Download all </button><br>
-    `;
+    \`;
     let chapterMenuElem;
 
     function buildPirateUi(){
@@ -186,7 +205,7 @@
 
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = `${getAuthorString()} - ${BIF.map.title.main}.${url.index}.mp3`;
+                link.download = \`\${getAuthorString()} - \${BIF.map.title.main}.\${url.index}.mp3\`;
                 link.click();
 
                 URL.revokeObjectURL(link.href);
@@ -226,43 +245,28 @@
     }
 
     async function createMetadata(){
-        let createdMetadata = [];
-        let coverUrl = false;
-        try {
-            let metadata = getMetadata();
-            coverUrl = metadata.coverUrl;
-            createdMetadata.push({
+        let metadata = getMetadata();
+        const response = await fetch(metadata.coverUrl);
+        const blob = await response.blob();
+        const csplit = metadata.coverUrl.split(".");
+        return [
+            {
+                name: "metadata/cover." + csplit[csplit.length-1],
+                input: blob
+            },
+            {
                 name: "metadata/metadata.json",
                 input: JSON.stringify(metadata, null, 2)
-            });
-        }
-        catch(error) {
-            console.error("Error fetching metadata", error.message);
-        }
-        if(coverUrl) {
-            try {
-                const response = await fetch(coverUrl);
-                const blob = await response.blob();
-                const csplit = coverUrl.split(".");
-                createdMetadata.push({
-                    name: "metadata/cover." + csplit[csplit.length-1],
-                    input: blob
-                });
             }
-            catch(error) {
-                console.error("Error fetching cover", error.message);
-            }
-        }
-        return createdMetadata;
+        ];
     }
-
-	function generateTOCFFmpeg(metadata){
+    function generateTOCFFmpeg(metadata){
         if (!metadata.chapters) return null;
         let lastTitle = null;
 
         const duration = Math.round(BIF.map.spine.map((x)=>x["audio-duration"]).reduce((acc, val) => acc + val)) * 1000000000;
 
-        let toc = ";FFMETADATA1\n\n";
+        let toc = ";FFMETADATA1\\n\\n";
 
         // Get the offset for each spine element
         let temp = 0;
@@ -280,7 +284,7 @@
             return ret;
         }).map((x)=>[
             // Escape the title
-            x.title.replaceAll("\\", "\\\\").replaceAll("#", "\\#").replaceAll(";", "\\;").replaceAll("=", "\\=").replaceAll("\n", ""),
+            x.title.replaceAll("\\\\", "\\\\\\\\").replaceAll("#", "\\\\#").replaceAll(";", "\\\\;").replaceAll("=", "\\\\=").replaceAll("\\n", ""),
             // Calculate absolute offset in nanoseconds
             Math.round(spineSpecificOffset[x.spine] + x.offset) * 1000000000
         ]);
@@ -293,10 +297,10 @@
         }
 
         chapters.forEach((x)=>{
-            toc += "[CHAPTER]\n";
-            toc += `START=${x[1]}\n`;
-            toc += `END=${x[2]}\n`;
-            toc += `title=${x[0]}\n`;
+            toc += "[CHAPTER]\\n";
+            toc += \`START=\${x[1]}\\n\`;
+            toc += \`END=\${x[2]}\\n\`;
+            toc += \`title=\${x[0]}\\n\`;
         });
 
         return toc;
@@ -305,7 +309,7 @@
     let downloadState = -1;
     let ffmpeg = null;
     async function createAndDownloadMp3(urls){
-		await initFFmpeg();
+        await initFFmpeg();
         let metadata = getMetadata();
         downloadElem.innerHTML += "Downloading mp3 files <br>";
         await ffmpeg.writeFile("chapters.txt", generateTOCFFmpeg(metadata));
@@ -322,7 +326,7 @@
             URL.revokeObjectURL(blob_url);
 
 
-            downloadElem.innerHTML += `Download of disk ${url.index + 1} complete! <br>`
+            downloadElem.innerHTML += \`Download of disk \${url.index + 1} complete! <br>\`
             downloadElem.scrollTo(0, downloadElem.scrollHeight);
         });
 
@@ -344,13 +348,13 @@
 
         await Promise.all(fetchPromises);
 
-        downloadElem.innerHTML += `<br><b>Downloads complete!</b> Now combining them together! (This might take a <b><i>minute</i></b>) <br> Transcode progress: <span id="mp3Progress">0</span> hours in to audiobook<br>`
+        downloadElem.innerHTML += \`<br><b>Downloads complete!</b> Now combining them together! (This might take a <b><i>minute</i></b>) <br> Transcode progress: <span id="mp3Progress">0</span> hours in to audiobook<br>\`
         downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
         let files = "";
 
         for (let i = 0; i < urls.length; i++){
-            files += `file '${i+1}.mp3'\n`
+            files += \`file '\${i+1}.mp3'\\n\`
         }
         await ffmpeg.writeFile("files.txt", files);
 
@@ -369,10 +373,10 @@
                             "-map_metadata", "1",
                             "-codec", "copy",
                             "-map", "0:a",
-                            "-metadata", `title=${metadata.title}`,
-                            "-metadata", `album=${metadata.title}`,
-                            "-metadata", `artist=${getAuthorString()}`,
-                            "-metadata", `encoded_by=LibbyRip/LibreGRAB`,
+                            "-metadata", \`title=\${metadata.title}\`,
+                            "-metadata", \`album=\${metadata.title}\`,
+                            "-metadata", \`artist=\${getAuthorString()}\`,
+                            "-metadata", \`encoded_by=LibbyRip/LibreGRAB\`,
                             "-c:a", "copy"])
                           .concat(coverName ? [
                             "-map", "2:v",
@@ -402,32 +406,32 @@
 
     }
 
-	let ffmpegInitPromise = null;
+    let ffmpegInitPromise = null;
 
-	async function initFFmpeg() {
-		console.log("initFFmpeg");
-		if (ffmpegInitPromise) return ffmpegInitPromise;
-		ffmpegInitPromise = (async () => {
-			if (!window.createFFmpeg) {
-				downloadElem.innerHTML += "Downloading FFmpeg.wasm (~50MB)<br>";
-				console.log("Downloading FFmpeg.wasm (~50MB)");
-				await addFFmpegJs();
-				downloadElem.innerHTML += "Completed FFmpeg.wasm download<br>";
-				console.log("Completed FFmpeg.wasm download");
-			}
+    async function initFFmpeg() {
+        console.log("initFFmpeg");
+        if (ffmpegInitPromise) return ffmpegInitPromise;
+        ffmpegInitPromise = (async () => {
+            if (!window.createFFmpeg) {
+                downloadElem.innerHTML += "Downloading FFmpeg.wasm (~50MB)<br>";
+                console.log("Downloading FFmpeg.wasm (~50MB)");
+                await addFFmpegJs();
+                downloadElem.innerHTML += "Completed FFmpeg.wasm download<br>";
+                console.log("Completed FFmpeg.wasm download");
+            }
 
-			// Initialize FFmpeg if not already done
-			if (!ffmpeg) {
-				downloadElem.innerHTML += "Initializing FFmpeg.wasm<br>";
-				console.log("Initializing FFmpeg.wasm");
-				ffmpeg = await window.createFFmpeg({ log: true });
-				downloadElem.innerHTML += "FFmpeg.wasm initialized<br>";
-				console.log("FFmpeg.wasm initialized");
-			}
-		})();
-		return ffmpegInitPromise;
-	}
-    
+            // Initialize FFmpeg if not already done
+            if (!ffmpeg) {
+                downloadElem.innerHTML += "Initializing FFmpeg.wasm<br>";
+                console.log("Initializing FFmpeg.wasm");
+                ffmpeg = await window.createFFmpeg({ log: true });
+                downloadElem.innerHTML += "FFmpeg.wasm initialized<br>";
+                console.log("FFmpeg.wasm initialized");
+            }
+        })();
+        return ffmpegInitPromise;
+    }
+
     function exportMP3(){
         if (downloadState != -1)
             return;
@@ -445,7 +449,7 @@
         downloadElem.innerHTML += "Using fallback download method...<br>";
         downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
-        const zipBlob = await downloadZip(files).blob();
+        const zipBlob = await (await getDownloadZip())(files).blob();
 
         downloadElem.innerHTML += "Generated zip file! <br>";
         downloadElem.scrollTo(0, downloadElem.scrollHeight);
@@ -516,7 +520,7 @@
                 downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
                 const writable = await handle.createWritable();
-                const zipStream = downloadZip(files).body;
+                const zipStream = (await getDownloadZip())(files).body;
 
                 await zipStream.pipeTo(writable);
 
@@ -565,7 +569,7 @@
         }
 
         buildPirateUi();
-		initFFmpeg().catch(console.error);
+        initFFmpeg().catch(console.error);
     }
 
 
@@ -579,11 +583,11 @@
               BEGIN BOOK SECTION!
        =========================================
     */
-    const bookNav = `
+    const bookNav = \`
         <div style="text-align: center; width: 100%;">
            <a class="pLink" id="download"> <h1> Download EPUB </h1> </a>
         </div>
-    `;
+    \`;
     window.pages = {};
 
     // Libby used the bind method as a way to "safely" expose
@@ -593,20 +597,20 @@
     const originalBind = Function.prototype.bind;
     Function.prototype.bind = function(...args) {
         const boundFn = originalBind.apply(this, args);
-        
-        // Store bound arguments (excluding `this`) for potential decryption function
+
+        // Store bound arguments (excluding \`this\`) for potential decryption function
         boundFn.__boundArgs = args.slice(1);
-        
+
         // Also store the original function for debugging
         boundFn.__originalFunction = this;
-        
+
         // If this looks like a decryption function, store it globally
-        if (this.toString().includes('decryption') || 
+        if (this.toString().includes('decryption') ||
             args.some(arg => typeof arg === 'function' && arg.toString().includes('decryption'))) {
             console.log("Decryption function detected:", this);
             window.__libregrab_decryption_fn = args.find(arg => typeof arg === 'function');
         }
-        
+
         return boundFn;
     };
 
@@ -635,7 +639,7 @@
         let u = new URL(url);
         if (u.pathname === "/") return url; // Already at root
 
-        u.pathname = u.pathname.replace(/\/[^/]*\/?$/, "/");
+        u.pathname = u.pathname.replace(/\\/[^\\/]*\\/?$/, "/");
         return u.toString();
     }
     function getFilenameFromURL(url) {
@@ -649,16 +653,16 @@
 
         let components = getBookComponents();
         let totComp = components.length;
-        downloadElem.innerHTML += `Gathering chapters <span id="chapAcc"> 0/${totComp} </span><br>`
+        downloadElem.innerHTML += \`Gathering chapters <span id="chapAcc"> 0/\${totComp} </span><br>\`
         downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
         let gc = 0;
         await waitForChapters(()=>{
             gc+=1;
-            downloadElem.querySelector("span#chapAcc").innerHTML = ` ${components.filter((page)=>undefined!=window.pages[page.id]).length}/${totComp}`;
+            downloadElem.querySelector("span#chapAcc").innerHTML = \` \${components.filter((page)=>undefined!=window.pages[page.id]).length}/\${totComp}\`;
         });
 
-        downloadElem.innerHTML += `Chapter gathering complete<br>`
+        downloadElem.innerHTML += \`Chapter gathering complete<br>\`
         downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
         let idToIfram = {};
@@ -693,7 +697,7 @@
             });
         }
 
-        downloadElem.innerHTML += `Downloading assets <span id="assetGath"> 0/${imgAssests.length} </span><br>`
+        downloadElem.innerHTML += \`Downloading assets <span id="assetGath"> 0/\${imgAssests.length} </span><br>\`
         downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
 
@@ -701,7 +705,7 @@
         await Promise.all(imgAssests.map(name=>(async function(){
             const response = await fetch(name.startsWith("http") ? name : location.origin + "/" + name);
             if (response.status != 200) {
-                downloadElem.innerHTML += `<b>WARNING:</b> Could not fetch ${name}<br>`
+                downloadElem.innerHTML += \`<b>WARNING:</b> Could not fetch \${name}<br>\`
                 downloadElem.scrollTo(0, downloadElem.scrollHeight);
                 return;
             }
@@ -713,7 +717,7 @@
             });
 
             gc+=1;
-            downloadElem.querySelector("span#assetGath").innerHTML = ` ${gc}/${imgAssests.length} `;
+            downloadElem.querySelector("span#assetGath").innerHTML = \` \${gc}/\${imgAssests.length} \`;
         })()));
     }
     function enforceEpubXHTML(metaId, url, htmlString, assetRegistry, links) {
@@ -800,9 +804,9 @@
         return xhtmlString;
     }
     function fixXhtml(metaId, url, html, assetRegistry, links){
-        html = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-` + enforceEpubXHTML(metaId, url, `<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xmlns:m="http://www.w3.org/1998/Math/MathML" xmlns:pls="http://www.w3.org/2005/01/pronunciation-lexicon" xmlns:ssml="http://www.w3.org/2001/10/synthesis" xmlns:svg="http://www.w3.org/2000/svg">`
-            + html + `</html>`, assetRegistry, links);
+        html = \`<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+\` + enforceEpubXHTML(metaId, url, \`<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xmlns:m="http://www.w3.org/1998/Math/MathML" xmlns:pls="http://www.w3.org/2005/01/pronunciation-lexicon" xmlns:ssml="http://www.w3.org/2001/10/synthesis" xmlns:svg="http://www.w3.org/2000/svg">\`
+            + html + \`</html>\`, assetRegistry, links);
 
 
 
@@ -956,7 +960,7 @@
 
         files.push({
             name: "OEBPS/content.opf",
-            input: `<?xml version="1.0" encoding="utf-8" standalone="no"?>\n` + xmlString
+            input: \`<?xml version="1.0" encoding="utf-8" standalone="no"?>\\n\` + xmlString
         });
     }
     function makeToc(files){
@@ -1021,7 +1025,7 @@
 
         files.push({
             name: "OEBPS/toc.ncx",
-            input: `<?xml version="1.0" encoding="utf-8" standalone="no"?>\n` + xmlString
+            input: \`<?xml version="1.0" encoding="utf-8" standalone="no"?>\\n\` + xmlString
         });
     }
     async function downloadEPUB(){
@@ -1037,21 +1041,21 @@
         // Add META-INF files
         files.push({
             name: "META-INF/container.xml",
-            input: `<?xml version="1.0" encoding="UTF-8"?>
+            input: \`<?xml version="1.0" encoding="UTF-8"?>
                 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
                     <rootfiles>
                         <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
                     </rootfiles>
                 </container>
-        `
+        \`
         });
-        
+
         // Add required encryption file for DRM compliance (required by EPUB spec)
         files.push({
             name: "META-INF/encryption.xml",
-            input: `<?xml version="1.0" encoding="UTF-8"?>
+            input: \`<?xml version="1.0" encoding="UTF-8"?>
                 <encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container"/>
-        `
+        \`
         });
 
         await createContent(files, imageAssets);
@@ -1080,7 +1084,7 @@
                 downloadElem.scrollTo(0, downloadElem.scrollHeight);
 
                 const writable = await handle.createWritable();
-                const zipStream = downloadZip(files).body;
+                const zipStream = (await getDownloadZip())(files).body;
 
                 await zipStream.pipeTo(writable);
 
@@ -1105,79 +1109,79 @@
         downloadState = -1;
     }
 
-// Main entry point for audiobooks
-function bifFoundBook(){
-    // New global style info
-    let s = document.createElement("style");
-    s.innerHTML = CSS;
-    document.head.appendChild(s)
+    // Main entry point for books
+    function bifFoundBook(){
+        // New global style info
+        let s = document.createElement("style");
+        s.innerHTML = CSS;
+        document.head.appendChild(s)
 
-    if (!window.__bif_cfc1){
-        alert("Injection failed! __bif_cfc1 not found");
-        return;
-    }
-    
-    // Debug: Log the original function structure
-    console.log("Original __bif_cfc1:", window.__bif_cfc1);
-    console.log("__bif_cfc1.__boundArgs:", window.__bif_cfc1.__boundArgs);
-    const old_crf1 = window.__bif_cfc1;
-    window.__bif_cfc1 = (win, edata)=>{
-        // If the bind hook succeeds, then the first element of bound args
-        // will be the decryption function. So we just passivly build up an
-        // index of the pages!
-        if (old_crf1.__boundArgs && old_crf1.__boundArgs[0]) {
-            pages[win.name] = old_crf1.__boundArgs[0](edata);
-        } else {
-            console.warn("Bind args not found, trying alternative decryption method");
-            // Try global decryption function if available
-            if (window.__libregrab_decryption_fn) {
+        if (!window.__bif_cfc1){
+            alert("Injection failed! __bif_cfc1 not found");
+            return;
+        }
+
+        // Debug: Log the original function structure
+        console.log("Original __bif_cfc1:", window.__bif_cfc1);
+        console.log("__bif_cfc1.__boundArgs:", window.__bif_cfc1.__boundArgs);
+        const old_crf1 = window.__bif_cfc1;
+        window.__bif_cfc1 = (win, edata)=>{
+            // If the bind hook succeeds, then the first element of bound args
+            // will be the decryption function. So we just passivly build up an
+            // index of the pages!
+            if (old_crf1.__boundArgs && old_crf1.__boundArgs[0]) {
+                pages[win.name] = old_crf1.__boundArgs[0](edata);
+            } else {
+                console.warn("Bind args not found, trying alternative decryption method");
+                // Try global decryption function if available
+                if (window.__libregrab_decryption_fn) {
+                    try {
+                        pages[win.name] = window.__libregrab_decryption_fn(edata);
+                    } catch (error) {
+                        console.error("Global decryption function failed:", error);
+                    }
+                }
+                // Final fallback: try to extract decrypted content directly
                 try {
-                    pages[win.name] = window.__libregrab_decryption_fn(edata);
+                    pages[win.name] = old_crf1(win, edata);
                 } catch (error) {
-                    console.error("Global decryption function failed:", error);
+                    console.error("Failed to decrypt content:", error);
+                    console.log("Attempting raw edata extraction");
+                    pages[win.name] = edata; // Sometimes the edata is already decrypted
                 }
             }
-            // Final fallback: try to extract decrypted content directly
-            try {
-                pages[win.name] = old_crf1(win, edata);
-            } catch (error) {
-                console.error("Failed to decrypt content:", error);
-                console.log("Attempting raw edata extraction");
-                pages[win.name] = edata; // Sometimes the edata is already decrypted
-            }
-        }
-        return old_crf1(win, edata);
-    };
+            return old_crf1(win, edata);
+        };
 
-    buildBookPirateUi();
-}
+        buildBookPirateUi();
+    }
 
-function downloadEPUBBBtn(){
-    if (downloadState != -1)
-        return;
+    function downloadEPUBBBtn(){
+        if (downloadState != -1)
+            return;
 
-    downloadState = 0;
-    downloadElem.classList.add("active");
-    downloadElem.innerHTML = "<b>Starting download</b><br>";
+        downloadState = 0;
+        downloadElem.classList.add("active");
+        downloadElem.innerHTML = "<b>Starting download</b><br>";
 
-    downloadEPUB().then(()=>{});
-}
-function buildBookPirateUi(){
-    // Create the nav
-    let nav = document.createElement("div");
-    nav.innerHTML = bookNav;
-    nav.querySelector("#download").onclick = downloadEPUBBBtn;
-    nav.classList.add("pNav");
-    let pbar = document.querySelector(".nav-progress-bar");
-    pbar.insertBefore(nav, pbar.children[1]);
+        downloadEPUB().then(()=>{});
+    }
+    function buildBookPirateUi(){
+        // Create the nav
+        let nav = document.createElement("div");
+        nav.innerHTML = bookNav;
+        nav.querySelector("#download").onclick = downloadEPUBBBtn;
+        nav.classList.add("pNav");
+        let pbar = document.querySelector(".nav-progress-bar");
+        pbar.insertBefore(nav, pbar.children[1]);
 
 
 
-    downloadElem = document.createElement("div");
-    downloadElem.classList.add("foldMenu");
-    downloadElem.setAttribute("tabindex", "-1"); // Don't mess with tab key
-    document.body.appendChild(downloadElem);
-}
+        downloadElem = document.createElement("div");
+        downloadElem.classList.add("foldMenu");
+        downloadElem.setAttribute("tabindex", "-1"); // Don't mess with tab key
+        document.body.appendChild(downloadElem);
+    }
 
     /* =========================================
               END BOOK SECTION!
@@ -1189,19 +1193,38 @@ function buildBookPirateUi(){
        =========================================
     */
 
-
-// The "BIF" contains all the info we need to download
-// stuff, so we wait until the page is loaded, and the
-// BIF is present, to inject the pirate menu.
-let intr = setInterval(()=>{
-    if (window.BIF != undefined && document.querySelector(".nav-progress-bar") != undefined){
-        clearInterval(intr);
-        let mode = location.hostname.split(".")[1];
-        if (mode == "listen"){
-            bifFoundAudiobook();
-        }else if (mode == "read"){
-            bifFoundBook();
+    // The "BIF" contains all the info we need to download
+    // stuff, so we wait until the page is loaded, and the
+    // BIF is present, to inject the pirate menu.
+    let intr = setInterval(()=>{
+        if (window.BIF != undefined && document.querySelector(".nav-progress-bar") != undefined){
+            clearInterval(intr);
+            let mode = location.hostname.split(".")[1];
+            if (mode == "listen"){
+                bifFoundAudiobook();
+            }else if (mode == "read"){
+                bifFoundBook();
+            }
         }
+    }, 25);
+})();`;
+
+    function injectPageScript(code) {
+        const script = document.createElement('script');
+        script.textContent = code;
+        (document.documentElement || document.head || document.body).appendChild(script);
+        script.remove();
     }
-}, 25);
+
+    injectPageScript(clientZipReadyCode + mainCode);
+
+    fetch('https://unpkg.com/client-zip@2.5.0/worker.js')
+        .then(r => r.text())
+        .then(clientZipCode => {
+            injectPageScript(clientZipCode + ';\nwindow.__libregrabResolveClientZip?.(window.downloadZip);');
+        })
+        .catch(error => {
+            console.error('LibreGRAB: failed to load client-zip', error);
+            injectPageScript('window.__libregrabRejectClientZip?.(new Error("client-zip failed to load"));');
+        });
 })();
