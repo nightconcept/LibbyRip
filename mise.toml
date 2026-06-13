@@ -1,0 +1,37 @@
+[tools]
+python = "3.13"
+"aqua:astral-sh/uv" = "latest"
+"conda:ffmpeg" = "latest"
+
+[settings]
+python.uv_venv_auto = "create|source"
+
+[tasks.uv-sync]
+description = "Sync the uv-managed Python environment"
+run = "uv sync --locked"
+
+[tasks.m4b]
+description = "Convert an MP3 (with embedded chapters/metadata) to M4B"
+usage = '''
+arg "<mp3file>" help="Path to a single MP3 file to convert"
+'''
+depends = ["uv-sync"]
+run = 'python convertToM4b.py "{{usage_mp3file}}"'
+
+[tasks.all-mp3]
+description = "Convert every root-level MP3 that does not already have a matching M4B"
+depends = ["uv-sync"]
+run = "python convertToM4b.py --all-mp3"
+
+[tasks.bake-metadata]
+description = "Bake metadata into extracted audiobook parts"
+usage = '''
+arg "<audiobook_dir>" help="Path to the exported audiobook directory"
+'''
+depends = ["uv-sync"]
+run = 'python bakeMetadata.py "{{usage_audiobook_dir}}"'
+
+[tasks.bake-metadata-gui]
+description = "Launch the metadata baker GUI"
+depends = ["uv-sync"]
+run = "python bakeMetadata.py --gui"

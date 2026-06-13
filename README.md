@@ -27,11 +27,15 @@ This repository includes a Python script that allows you to bake metadata into y
 
 ### Script Requirements
 
-Python 3.x is required, along with the dependencies listed in `requirements.txt`. Install them using:
+Python 3.13 is required. The Python dependencies are locked in `pyproject.toml` and `uv.lock`, while the repo tools are pinned in `mise.toml`.
+
+Install the dev tools with `mise install`, then sync the Python environment from the lockfile:
 
 ```bash
-pip install -r requirements.txt
+mise run uv-sync
 ```
+
+If your shell is not already activated for `mise`, prefix one-off commands with `mise exec --` so they use the pinned toolchain.
 
 ### Running The Script
 
@@ -40,7 +44,7 @@ You can run the script in either **CLI mode** or **GUI mode**, depending on your
 #### Command-Line Mode
 
 ```bash
-python bakeMetadata.py [<audiobook_directory>]
+mise run bake-metadata <audiobook_directory>
 ```
 
 - If no directory is passed as an argument, you will be prompted to enter one.
@@ -50,7 +54,7 @@ python bakeMetadata.py [<audiobook_directory>]
 #### GUI Mode
 
 ```bash
-python bakeMetadata.py --gui [<audiobook_directory>]
+mise run bake-metadata-gui
 ```
 
 - Launches a PyQt5 graphical interface.

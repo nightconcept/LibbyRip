@@ -26,9 +26,10 @@ vite.config.ts.timestamp-*
 .base-version
 package.json.backup
 
-.devenv/
 .direnv/
-.devenv.flake.nix
+.venv/
+mise.local.toml
+.mise.local.toml
 
 # Audio test files
 *.mp3
