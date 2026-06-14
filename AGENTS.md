@@ -51,8 +51,9 @@ mise run uv-sync
 
 **mise** tasks:
 ```bash
-mise run m4b path/to/audiobook.mp3       # Convert MP3 (with embedded chapters) to M4B
+mise run m4b path/to/audiobook.mp3       # Convert MP3 or exported audiobook ZIP to M4B
 mise run all-mp3                         # Convert every root-level MP3 that is not already an M4B
+mise run all-zip                         # Convert every root-level exported ZIP that is not already an M4B
 mise run bake-metadata path/to/audiobook # Bake ID3 tags into Part NNN.mp3 files
 mise tasks ls                            # List all available tasks
 ```

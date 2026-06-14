@@ -49,6 +49,20 @@ mise run bake-metadata <audiobook_directory>
 - This mode is ideal for batch automation or terminal workflows.
 - Output, progress, and errors will appear in the console.
 
+### ZIP-First M4B Workflow
+
+If you export audiobooks as ZIPs from the userscript, you can convert them directly to `.m4b` without first generating a giant browser-side MP3:
+
+```bash
+# Convert one exported ZIP
+mise run m4b "Author - Title.zip"
+
+# Convert every root-level exported ZIP that does not already have a matching .m4b
+mise run all-zip
+```
+
+This path uses the exported `metadata.json`, chapter list, cover image, and `Part *.mp3` files from the ZIP. Non-Libby ZIP files are skipped.
+
 ### What The Script Does
 
 This script does the following:

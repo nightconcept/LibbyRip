@@ -11,17 +11,22 @@ description = "Sync the uv-managed Python environment"
 run = "uv sync --locked"
 
 [tasks.m4b]
-description = "Convert an MP3 (with embedded chapters/metadata) to M4B"
+description = "Convert an MP3 or exported audiobook ZIP to M4B"
 usage = '''
-arg "<mp3file>" help="Path to a single MP3 file to convert"
+arg "<input>" help="Path to a single MP3 file or exported audiobook ZIP"
 '''
 depends = ["uv-sync"]
-run = 'python convertToM4b.py "{{usage_mp3file}}"'
+run = 'python convertToM4b.py "{{usage_input}}"'
 
 [tasks.all-mp3]
 description = "Convert every root-level MP3 that does not already have a matching M4B"
 depends = ["uv-sync"]
 run = "python convertToM4b.py --all-mp3"
+
+[tasks.all-zip]
+description = "Convert every root-level Libby export ZIP that does not already have a matching M4B"
+depends = ["uv-sync"]
+run = "python convertToM4b.py --all-zip"
 
 [tasks.bake-metadata]
 description = "Bake metadata into extracted audiobook parts"
