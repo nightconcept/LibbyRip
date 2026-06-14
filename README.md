@@ -23,7 +23,7 @@ Rip all your favorite audiobooks from libby!
 
 ## Using the Python Script (`bakeMetadata.py`)
 
-This repository includes a Python script that allows you to bake metadata into your downloaded audiobook MP3s, either via the command-line or a GUI.
+This repository includes a Python script that allows you to bake metadata into your downloaded audiobook MP3s from the command line.
 
 ### Script Requirements
 
@@ -39,9 +39,7 @@ If your shell is not already activated for `mise`, prefix one-off commands with 
 
 ### Running The Script
 
-You can run the script in either **CLI mode** or **GUI mode**, depending on your needs:
-
-#### Command-Line Mode
+Run the script from the command line:
 
 ```bash
 mise run bake-metadata <audiobook_directory>
@@ -50,17 +48,6 @@ mise run bake-metadata <audiobook_directory>
 - If no directory is passed as an argument, you will be prompted to enter one.
 - This mode is ideal for batch automation or terminal workflows.
 - Output, progress, and errors will appear in the console.
-
-#### GUI Mode
-
-```bash
-mise run bake-metadata-gui
-```
-
-- Launches a PyQt5 graphical interface.
-- If no directory is passed, you'll be prompted to select one with a file dialog.
-- All output and errors (including warnings like `Lame tag CRC check failed`) will be shown in a scrollable status window within the GUI instead of the terminal.
-- Useful for users who prefer a more visual interface.
 
 ### What The Script Does
 
@@ -73,7 +60,7 @@ This script does the following:
 
 - The audiobook directory **must** contain a `metadata` subdirectory with `metadata.json` and a cover image.
 - The script assumes filenames follow the `Part X.mp3` naming convention.
-- The message `Lame tag CRC check failed` is a **harmless warning** and can be safely ignored. It is now shown in the status window when using the GUI.
+- The message `Lame tag CRC check failed` is a **harmless warning** and can be safely ignored.
 
 #### `buildChapters.py`
 

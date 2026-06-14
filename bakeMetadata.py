@@ -5,22 +5,7 @@ import json
 import eyed3
 import mimetypes
 import argparse
-import logging
 from eyed3.id3 import ID3_V2_4
-from PyQt5 import QtWidgets, QtCore
-
-# Custom logging handler to forward logs to the GUI status window.
-class GuiLogHandler(logging.Handler):
-    def __init__(self, callback):
-        super().__init__()
-        self.callback = callback
-
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            self.callback(msg)
-        except Exception:
-            self.handleError(record)
 
 def bake_metadata(workingDir, progress_callback=None):
     if workingDir.startswith("'"):
@@ -155,125 +140,11 @@ def bake_metadata(workingDir, progress_callback=None):
             progress = int((index + 1) * 100 / total)
             progress_callback(f"Baked: {file}", progress)
 
-# Worker class to run bake_metadata in a separate thread
-class Worker(QtCore.QObject):
-    progress = QtCore.pyqtSignal(str, int)
-    finished = QtCore.pyqtSignal()
-    error = QtCore.pyqtSignal(str)
-
-    def __init__(self, path):
-        super().__init__()
-        self.path = path
-
-    def run(self):
-        try:
-            bake_metadata(self.path, progress_callback=self.progress.emit)
-        except Exception as e:
-            # Format for GUI if needed
-            if "\n" in str(e):
-                msg = str(e).replace("\n", "<br>")
-            else:
-                msg = str(e)
-            self.error.emit(msg)
-        finally:
-            self.finished.emit()
-
-# -------- GUI SECTION --------
-
-class MetadataBakerApp(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Bake Metadata")
-        self.resize(500, 300)
-        self.init_ui()
-
-    def init_ui(self):
-        layout = QtWidgets.QVBoxLayout()
-
-        # Directory selection
-        dir_layout = QtWidgets.QHBoxLayout()
-        self.dirInput = QtWidgets.QLineEdit()
-        self.browseBtn = QtWidgets.QPushButton("Browse")
-        dir_layout.addWidget(self.dirInput)
-        dir_layout.addWidget(self.browseBtn)
-
-        # Run button
-        self.runBtn = QtWidgets.QPushButton("Run Bake")
-
-        # Progress bar
-        self.progressBar = QtWidgets.QProgressBar()
-        self.progressBar.setRange(0, 100)
-        self.progressBar.setValue(0)
-
-        # Log output
-        self.logOutput = QtWidgets.QTextEdit()
-        self.logOutput.setReadOnly(True)
-        self.logOutput.setAcceptRichText(True)
-
-        layout.addLayout(dir_layout)
-        layout.addWidget(self.runBtn)
-        layout.addWidget(self.progressBar)
-        layout.addWidget(self.logOutput)
-        self.setLayout(layout)
-
-        self.browseBtn.clicked.connect(self.select_dir)
-        self.runBtn.clicked.connect(self.run_bake)
-
-    def select_dir(self):
-        dir_path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Audiobook Directory")
-        if dir_path:
-            self.dirInput.setText(dir_path)
-
-    def run_bake(self):
-        path = self.dirInput.text().strip()
-        self.logOutput.clear()
-
-        if not os.path.isdir(path):
-            self.logOutput.append("<span style='color:red;'>Invalid directory path.</span>")
-            return
-
-        self.progressBar.setValue(0)
-        self.runBtn.setEnabled(False)
-        self.browseBtn.setEnabled(False)
-
-        self.thread = QtCore.QThread()
-        self.worker = Worker(path)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self.update_status)
-        self.worker.error.connect(self.report_error)
-        self.worker.finished.connect(self.process_finished)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.thread.start()
-
-    def update_status(self, message, progress):
-        # Only display non-error messages here
-        if not message.startswith("ERROR"):
-            # Convert newlines to HTML line breaks for GUI
-            if "\n" in message:
-                message = message.replace("\n", "<br>")
-            self.logOutput.append(message)
-        self.progressBar.setValue(progress)
-
-    def report_error(self, error_message):
-        # Ensure error messages are properly formatted for GUI
-        if "\n" in error_message:
-            error_message = error_message.replace("\n", "<br>")
-        self.logOutput.append(f"<span style='color:red;'>{error_message}</span>")
-
-    def process_finished(self):
-        self.logOutput.append("Processing complete.")
-        self.runBtn.setEnabled(True)
-        self.browseBtn.setEnabled(True)
-
 # -------- MAIN ENTRY POINT --------
 
 def main():
     parser = argparse.ArgumentParser(description="Bake audiobook metadata.")
     parser.add_argument("directory", nargs="?", default=None, help="Path to audiobook directory")
-    parser.add_argument("--gui", action="store_true", help="Run in GUI mode")
     args = parser.parse_args()
 
     def cli_callback(message, progress):
@@ -281,40 +152,16 @@ def main():
         if not message.startswith("ERROR"):
             print(f"{message} ({progress}%)")
 
-    if args.gui:
-        app = QtWidgets.QApplication(sys.argv)
-        window = MetadataBakerApp()
-        if args.directory:
-            window.dirInput.setText(args.directory)
-
-        def gui_log_callback(message, progress=0):
-            # Only display non-error messages here
-            if not message.startswith("ERROR"):
-                QtCore.QMetaObject.invokeMethod(
-                    window.logOutput,
-                    "append",
-                    QtCore.Qt.QueuedConnection,
-                    QtCore.Q_ARG(str, message)
-                )
-
-        gui_handler = GuiLogHandler(lambda msg: gui_log_callback(msg))
-        gui_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
-        gui_handler.setLevel(logging.WARNING)
-        eyed3.log.addHandler(gui_handler)
-        eyed3.log.propagate = False
-
-        window.show()
-        sys.exit(app.exec_())
+    if args.directory:
+        workingDir = args.directory
     else:
-        if args.directory:
-            workingDir = args.directory
-        else:
-            workingDir = input("Path to audiobook dir: ").strip()
-        try:
-            bake_metadata(workingDir, progress_callback=cli_callback)
-        except Exception as e:
-            print(f"\033[91m{e}\033[0m")
-            sys.exit(1)
+        workingDir = input("Path to audiobook dir: ").strip()
+
+    try:
+        bake_metadata(workingDir, progress_callback=cli_callback)
+    except Exception as e:
+        print(f"\033[91m{e}\033[0m")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

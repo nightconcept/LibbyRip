@@ -1,7 +1,7 @@
 [tools]
 python = "3.13"
 "aqua:astral-sh/uv" = "latest"
-"conda:ffmpeg" = "latest"
+"github:GyanD/codexffmpeg" = "8.1.1"
 
 [settings]
 python.uv_venv_auto = "create|source"
@@ -30,8 +30,3 @@ arg "<audiobook_dir>" help="Path to the exported audiobook directory"
 '''
 depends = ["uv-sync"]
 run = 'python bakeMetadata.py "{{usage_audiobook_dir}}"'
-
-[tasks.bake-metadata-gui]
-description = "Launch the metadata baker GUI"
-depends = ["uv-sync"]
-run = "python bakeMetadata.py --gui"

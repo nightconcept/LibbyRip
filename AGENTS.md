@@ -15,7 +15,7 @@ A companion set of Python scripts handles post-download metadata processing.
   - **Book (EPUB) section** — Hooks `Function.prototype.bind` to capture Libby's content-decryption function. Intercepts `__bif_cfc1` to collect decrypted XHTML page content as it loads. Assembles a valid EPUB (content.opf, toc.ncx, XHTML chapters, assets) in memory and downloads it as a zip.
   - **Initializer section** — Polls for the global `BIF` object (Libby's internal Book Info Frame). Once present, routes to `bifFoundAudiobook()` or `bifFoundBook()` based on whether the subdomain is `listen` or `read`.
 
-- **`bakeMetadata.py`** — Post-download tool to embed ID3 tags (title, artist, album, track number, cover art, per-file chapter markers) into the `Part NNN.mp3` files exported by the userscript. Reads `metadata/metadata.json` and `metadata/cover.*`. Supports CLI and PyQt5 GUI modes (`--gui` flag). Runs metadata baking in a `QThread` in GUI mode.
+- **`bakeMetadata.py`** — Post-download CLI tool to embed ID3 tags (title, artist, album, track number, cover art, per-file chapter markers) into the `Part NNN.mp3` files exported by the userscript. Reads `metadata/metadata.json` and `metadata/cover.*`.
 
 - **`buildChapters.py`** — Reads `metadata.json` from stdin and outputs chapter metadata in either `chapters.txt` format (for m4b-tool/tone) or ffmetadata format (for ffmpeg). Contains `Metadata` and `Chapter` dataclasses that model the Libby metadata structure, including spine-offset calculation and the "author and narrator" combined role.
 
@@ -54,7 +54,6 @@ mise run uv-sync
 mise run m4b path/to/audiobook.mp3       # Convert MP3 (with embedded chapters) to M4B
 mise run all-mp3                         # Convert every root-level MP3 that is not already an M4B
 mise run bake-metadata path/to/audiobook # Bake ID3 tags into Part NNN.mp3 files
-mise run bake-metadata-gui               # Launch the GUI metadata baker
 mise tasks ls                            # List all available tasks
 ```
 
@@ -64,7 +63,6 @@ uv lock          # Update the dependency lockfile after changing dependencies
 uv sync --locked # Install exactly what is pinned in uv.lock
 
 python bakeMetadata.py /path/to/audiobook        # Bake ID3 tags into Part NNN.mp3 files (CLI)
-python bakeMetadata.py --gui /path/to/audiobook  # Same, with PyQt5 GUI
 
 python buildChapters.py --ffmpeg  < metadata/metadata.json > metadata.txt   # ffmetadata format
 python buildChapters.py --chapters < metadata/metadata.json > chapters.txt  # chapters.txt format
@@ -72,6 +70,10 @@ python buildChapters.py --chapters < metadata/metadata.json > chapters.txt  # ch
 
 ## Development Environment
 
-`mise.toml` provisions: Python 3.13, `uv`, and `ffmpeg`. `pyproject.toml` plus `uv.lock` pin the Python helper dependencies. There is no build, lint, or test infrastructure. The userscript is a single vanilla JS file with no transpilation or bundling — changes to `userscript.js` are effective immediately when re-read by Tampermonkey (or uploaded to GreasyFork).
+`mise.toml` provisions: Python 3.13, `uv`, and a pinned `ffmpeg` release. `pyproject.toml` plus `uv.lock` pin the Python helper dependencies. There is no build, lint, or test infrastructure. The userscript is a single vanilla JS file with no transpilation or bundling — changes to `userscript.js` are effective immediately when re-read by Tampermonkey (or uploaded to GreasyFork).
 
 If your shell is not already activated with `mise`, use `mise exec -- <command>` for one-off commands so you get the pinned tools on every platform.
+
+## Upstream Sync Notes
+
+This fork is CLI-only for the Python helper tooling. Treat any upstream PyQt5 or GUI-oriented changes in `bakeMetadata.py`, `pyproject.toml`, `mise.toml`, `README.md`, or related docs/tasks as out of scope unless the user explicitly asks to restore a GUI path.

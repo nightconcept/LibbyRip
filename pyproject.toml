@@ -5,7 +5,6 @@ description = "LibbyRip helper scripts"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "eyed3",
-  "PyQt5",
 ]
 
 [tool.uv]

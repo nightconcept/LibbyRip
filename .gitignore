@@ -34,4 +34,5 @@ mise.local.toml
 # Audio test files
 *.mp3
 *.m4b
+*.partial.m4a
 *:Zone.Identifier
